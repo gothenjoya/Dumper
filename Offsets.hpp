@@ -1,5 +1,5 @@
 #pragma once
-/*  Roblox Version  : version-460909c4fe904aae
+/*  Roblox Version  : version-2b1721d47abf49aa
 /*  Dumped At       : 21:31 27/05/2026 (GMT)
 /*  Total Offsets   : 13313
 */
@@ -8,7 +8,7 @@
 #include <string>
 
 namespace FFlagOffsets {
-    inline std::string ClientVersion = "version-460909c4fe904aae";
+    inline std::string ClientVersion = "version-2b1721d47abf49aa";
 
     namespace FFlagList {
          inline constexpr uintptr_t Pointer = 0x80CFF80;
