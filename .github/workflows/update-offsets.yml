@@ -2,7 +2,7 @@ name: Update Roblox Offsets
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -25,7 +25,7 @@ jobs:
         run: pip install requests
 
       - name: Run updater
-        run: python updater.py
+        run: python Updater.py
 
       - name: Commit and push updated offsets
         run: |
@@ -37,8 +37,8 @@ jobs:
             exit 0
           fi
 
-          NEW_VERSION=$(grep 'ClientVersion' offsets.hpp | sed -E 's/.*"([^"]+)".*/\1/')
-          TOTAL_OFFSETS=$(grep 'Total Offsets' offsets.hpp | sed -E 's/.*: *([0-9]+).*/\1/')
+          NEW_VERSION=$(grep 'ClientVersion' Offsets.hpp | sed -E 's/.*"([^"]+)".*/\1/')
+          TOTAL_OFFSETS=$(grep 'Total Offsets' Offsets.hpp | sed -E 's/.*: *([0-9]+).*/\1/')
 
           UPDATE_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
           COMMIT_SHA=$(git rev-parse --short HEAD)
@@ -53,7 +53,7 @@ jobs:
           echo " Runner   : ubuntu-latest"
           echo "======================================"
 
-          git add offsets.hpp
+          git add Offsets.hpp
 
           git commit -m "Update offsets → $NEW_VERSION ($TOTAL_OFFSETS offsets)"
 
