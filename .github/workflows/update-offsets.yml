@@ -1,0 +1,60 @@
+name: Update Roblox Offsets
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run updater
+        run: python updater.py
+
+      - name: Commit and push updated offsets
+        run: |
+          git config --global user.name "Offsets Updater"
+          git config --global user.email "actions@github.com"
+
+          if git diff --quiet; then
+            echo "No changes detected."
+            exit 0
+          fi
+
+          NEW_VERSION=$(grep 'ClientVersion' offsets.hpp | sed -E 's/.*"([^"]+)".*/\1/')
+          TOTAL_OFFSETS=$(grep 'Total Offsets' offsets.hpp | sed -E 's/.*: *([0-9]+).*/\1/')
+
+          UPDATE_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+
+          echo "======================================"
+          echo " Roblox Offsets Updated"
+          echo "--------------------------------------"
+          echo " Version  : $NEW_VERSION"
+          echo " Offsets  : $TOTAL_OFFSETS"
+          echo " Updated  : $UPDATE_TIME"
+          echo " Commit   : $COMMIT_SHA"
+          echo " Runner   : ubuntu-latest"
+          echo "======================================"
+
+          git add offsets.hpp
+
+          git commit -m "Update offsets → $NEW_VERSION ($TOTAL_OFFSETS offsets)"
+
+          git push
