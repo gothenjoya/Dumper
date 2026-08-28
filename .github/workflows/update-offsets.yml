@@ -6,7 +6,6 @@ on:
 
   workflow_dispatch:
 
-# Prevent multiple updater runs from racing each other.
 concurrency:
   group: roblox-offsets-updater
   cancel-in-progress: false
@@ -37,7 +36,6 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-          cache: "pip"
 
       # ======================================================
       # Dependencies
@@ -212,7 +210,7 @@ jobs:
           set -euo pipefail
 
           git config user.name "G0THENJ0YA"
-          git config user.email "1486498383144292483+G0THENJ0YA@users.noreply.github.com"
+          git config user.email "contact@synapsexisasnake.com"
 
       # ======================================================
       # Commit
@@ -238,7 +236,6 @@ jobs:
 
           git add -- Offsets.hpp
 
-          # Check staged content for whitespace errors.
           git diff --cached --check
 
           git commit \
@@ -264,16 +261,15 @@ jobs:
             echo " Push attempt $attempt/5"
             echo "======================================"
 
-            # Get the newest remote state.
             git fetch origin "$BRANCH"
 
-            # Try the push first.
             if git push origin "HEAD:$BRANCH"; then
               echo ""
               echo "======================================"
               echo " PUSH SUCCESSFUL"
               echo "======================================"
 
+              echo "Commit:"
               git rev-parse --short HEAD
 
               exit 0
