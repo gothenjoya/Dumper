@@ -3,7 +3,12 @@ name: Update Roblox Offsets
 on:
   schedule:
     - cron: "*/5 * * * *"
+
   workflow_dispatch:
+
+concurrency:
+  group: roblox-offsets-updater
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -15,46 +20,214 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
-        run: pip install requests
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests
 
       - name: Run updater
-        run: python Updater.py
-
-      - name: Commit and push updated offsets
+        shell: bash
         run: |
-          git config --global user.name "Offsets Updater"
-          git config --global user.email "offsets@users.noreply.github.com"
+          set -euo pipefail
 
-          if git diff --quiet; then
-            echo "No changes detected."
-            exit 0
+          echo "Running Updater.py..."
+
+          python Updater.py
+
+          echo "Updater completed successfully."
+          
+      - name: Validate offsets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f "Offsets.hpp" ]]; then
+            echo "::error::Offsets.hpp was not generated."
+            exit 1
           fi
 
-          NEW_VERSION=$(grep 'ClientVersion' Offsets.hpp | sed -E 's/.*"([^"]+)".*/\1/')
-          TOTAL_OFFSETS=$(grep 'Total Offsets' Offsets.hpp | sed -E 's/.*: *([0-9]+).*/\1/')
+          FILE_SIZE=$(wc -c < Offsets.hpp)
 
-          UPDATE_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          COMMIT_SHA=$(git rev-parse --short HEAD)
+          echo "Offsets.hpp size: ${FILE_SIZE} bytes"
 
+          if (( FILE_SIZE < 1000 )); then
+            echo "::error::Offsets.hpp is suspiciously small."
+            exit 1
+          fi
+
+          if ! grep -q "ClientVersion" Offsets.hpp; then
+            echo "::error::ClientVersion was not found."
+            exit 1
+          fi
+
+          if ! grep -q "Total Offsets" Offsets.hpp; then
+            echo "::error::Total Offsets was not found."
+            exit 1
+          fi
+
+          NEW_VERSION=$(
+            grep -oP 'ClientVersion\s*=\s*"\K[^"]+' \
+              Offsets.hpp |
+            head -n1
+          )
+
+          NEW_TOTAL=$(
+            grep -oP 'Total Offsets\s*:\s*\K[0-9]+' \
+              Offsets.hpp |
+            head -n1
+          )
+
+          if [[ -z "$NEW_VERSION" ]]; then
+            echo "::error::Could not read ClientVersion."
+            exit 1
+          fi
+
+          if [[ -z "$NEW_TOTAL" ]]; then
+            echo "::error::Could not read Total Offsets."
+            exit 1
+          fi
+
+          echo "ClientVersion: $NEW_VERSION"
+          echo "Total Offsets: $NEW_TOTAL"
+
+      - name: Check for changes
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- Offsets.hpp; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No offset changes."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Offset changes detected."
+          fi
+
+      - name: Show update
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          NEW_VERSION=$(
+            grep -oP 'ClientVersion\s*=\s*"\K[^"]+' \
+              Offsets.hpp |
+            head -n1
+          )
+
+          NEW_TOTAL=$(
+            grep -oP 'Total Offsets\s*:\s*\K[0-9]+' \
+              Offsets.hpp |
+            head -n1
+          )
+
+          echo ""
           echo "======================================"
-          echo " Roblox Offsets Updated"
-          echo "--------------------------------------"
-          echo " Version  : $NEW_VERSION"
-          echo " Offsets  : $TOTAL_OFFSETS"
-          echo " Updated  : $UPDATE_TIME"
-          echo " Commit   : $COMMIT_SHA"
-          echo " Runner   : ubuntu-latest"
+          echo " Roblox Offsets Update"
           echo "======================================"
+          echo " Version : $NEW_VERSION"
+          echo " Offsets : $NEW_TOTAL"
+          echo "======================================"
+          echo ""
 
-          git add Offsets.hpp
+          git diff --stat -- Offsets.hpp
 
-          git commit -m "Update offsets → $NEW_VERSION ($TOTAL_OFFSETS offsets)"
+      - name: Configure Git
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "G0THENJ0YA"
+          git config user.email "contact@synapsexisasnake"
 
-          git push
+      - name: Commit offsets
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          NEW_VERSION=$(
+            grep -oP 'ClientVersion\s*=\s*"\K[^"]+' \
+              Offsets.hpp |
+            head -n1
+          )
+
+          NEW_TOTAL=$(
+            grep -oP 'Total Offsets\s*:\s*\K[0-9]+' \
+              Offsets.hpp |
+            head -n1
+          )
+
+          git add -- Offsets.hpp
+
+          git diff --cached --check
+
+          git commit \
+            -m "Update offsets → $NEW_VERSION ($NEW_TOTAL offsets)"
+
+      # ======================================================
+      # Push
+      # ======================================================
+
+      - name: Push offsets
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BRANCH="${GITHUB_REF_NAME}"
+
+          echo "Target branch: $BRANCH"
+
+          # Try multiple times.
+          #
+          # Before every retry, fetch the latest remote branch
+          # and rebase our commit on top of it.
+          for attempt in 1 2 3 4 5; do
+            echo ""
+            echo "======================================"
+            echo " Push attempt $attempt/5"
+            echo "======================================"
+
+            git fetch origin "$BRANCH"
+
+            if git push origin "HEAD:$BRANCH"; then
+              echo ""
+              echo "======================================"
+              echo " PUSH SUCCESSFUL"
+              echo "======================================"
+              exit 0
+            fi
+
+            echo "Push failed."
+
+            if [[ "$attempt" -lt 5 ]]; then
+              echo "Rebasing against latest remote branch..."
+
+              git rebase "origin/$BRANCH"
+
+              echo "Waiting before retry..."
+              sleep $((attempt * 5))
+            fi
+          done
+
+          echo "::error::Failed to push offsets after 5 attempts."
+          exit 1
+          
+      - name: Final status
+        if: success()
+        shell: bash
+        run: |
+          echo ""
+          echo "======================================"
+          echo " Offset updater completed successfully"
+          echo "======================================"
