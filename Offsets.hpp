@@ -4,7 +4,7 @@
 /*                  https://offsets.imtheo.lol                  
 /* -------------------------------------------------------------
 /*  Dumped With     : RbxDumperV2                               
-/*  Roblox Version  : version-deadbeef
+/*  Roblox Version  : version-f5a60436d48947d3
 /*  Dumper Version  : 2.1.7
 /*  Dumped At       : 19:36 27/08/2026 (GMT)
 /*  Total Offsets   : 14268
@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <string>
 namespace FFlagOffsets {
-    inline std::string ClientVersion = "version-deadbeef";
+    inline std::string ClientVersion = "version-f5a60436d48947d3";
 
     namespace FFlagList {
          inline constexpr uintptr_t Pointer = 0x876ccc8;
