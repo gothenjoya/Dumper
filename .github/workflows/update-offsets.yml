@@ -6,6 +6,7 @@ on:
 
   workflow_dispatch:
 
+# Prevent multiple updater runs from racing each other.
 concurrency:
   group: roblox-offsets-updater
   cancel-in-progress: false
@@ -18,22 +19,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ======================================================
+      # Checkout
+      # ======================================================
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: true
 
+      # ======================================================
+      # Python
+      # ======================================================
+
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: "pip"
 
+      # ======================================================
+      # Dependencies
+      # ======================================================
+
       - name: Install dependencies
+        shell: bash
         run: |
+          set -euo pipefail
+
           python -m pip install --upgrade pip
           python -m pip install requests
+
+      # ======================================================
+      # Run updater
+      # ======================================================
 
       - name: Run updater
         shell: bash
@@ -45,7 +65,11 @@ jobs:
           python Updater.py
 
           echo "Updater completed successfully."
-          
+
+      # ======================================================
+      # Validate generated offsets
+      # ======================================================
+
       - name: Validate offsets
         shell: bash
         run: |
@@ -62,16 +86,19 @@ jobs:
 
           if (( FILE_SIZE < 1000 )); then
             echo "::error::Offsets.hpp is suspiciously small."
+            echo "Refusing to commit."
             exit 1
           fi
 
           if ! grep -q "ClientVersion" Offsets.hpp; then
             echo "::error::ClientVersion was not found."
+            echo "Refusing to commit."
             exit 1
           fi
 
           if ! grep -q "Total Offsets" Offsets.hpp; then
             echo "::error::Total Offsets was not found."
+            echo "Refusing to commit."
             exit 1
           fi
 
@@ -97,8 +124,19 @@ jobs:
             exit 1
           fi
 
+          if ! [[ "$NEW_TOTAL" =~ ^[0-9]+$ ]]; then
+            echo "::error::Total Offsets is not numeric."
+            exit 1
+          fi
+
+          echo ""
           echo "ClientVersion: $NEW_VERSION"
           echo "Total Offsets: $NEW_TOTAL"
+          echo ""
+
+      # ======================================================
+      # Check for changes
+      # ======================================================
 
       - name: Check for changes
         id: changes
@@ -113,6 +151,10 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Offset changes detected."
           fi
+
+      # ======================================================
+      # Show update
+      # ======================================================
 
       - name: Show update
         if: steps.changes.outputs.changed == 'true'
@@ -132,22 +174,49 @@ jobs:
             head -n1
           )
 
+          OLD_VERSION=$(
+            git show HEAD:Offsets.hpp 2>/dev/null |
+            grep -oP 'ClientVersion\s*=\s*"\K[^"]+' |
+            head -n1 ||
+            true
+          )
+
+          OLD_TOTAL=$(
+            git show HEAD:Offsets.hpp 2>/dev/null |
+            grep -oP 'Total Offsets\s*:\s*\K[0-9]+' |
+            head -n1 ||
+            true
+          )
+
           echo ""
           echo "======================================"
           echo " Roblox Offsets Update"
           echo "======================================"
-          echo " Version : $NEW_VERSION"
-          echo " Offsets : $NEW_TOTAL"
+          echo " Old Version : ${OLD_VERSION:-UNKNOWN}"
+          echo " New Version : $NEW_VERSION"
+          echo " Old Offsets : ${OLD_TOTAL:-UNKNOWN}"
+          echo " New Offsets : $NEW_TOTAL"
           echo "======================================"
           echo ""
 
           git diff --stat -- Offsets.hpp
 
+      # ======================================================
+      # Configure Git
+      # ======================================================
+
       - name: Configure Git
         if: steps.changes.outputs.changed == 'true'
+        shell: bash
         run: |
+          set -euo pipefail
+
           git config user.name "G0THENJ0YA"
-          git config user.email "contact@synapsexisasnake"
+          git config user.email "1486498383144292483+G0THENJ0YA@users.noreply.github.com"
+
+      # ======================================================
+      # Commit
+      # ======================================================
 
       - name: Commit offsets
         if: steps.changes.outputs.changed == 'true'
@@ -169,6 +238,7 @@ jobs:
 
           git add -- Offsets.hpp
 
+          # Check staged content for whitespace errors.
           git diff --cached --check
 
           git commit \
@@ -188,27 +258,28 @@ jobs:
 
           echo "Target branch: $BRANCH"
 
-          # Try multiple times.
-          #
-          # Before every retry, fetch the latest remote branch
-          # and rebase our commit on top of it.
           for attempt in 1 2 3 4 5; do
             echo ""
             echo "======================================"
             echo " Push attempt $attempt/5"
             echo "======================================"
 
+            # Get the newest remote state.
             git fetch origin "$BRANCH"
 
+            # Try the push first.
             if git push origin "HEAD:$BRANCH"; then
               echo ""
               echo "======================================"
               echo " PUSH SUCCESSFUL"
               echo "======================================"
+
+              git rev-parse --short HEAD
+
               exit 0
             fi
 
-            echo "Push failed."
+            echo "::warning::Push attempt $attempt failed."
 
             if [[ "$attempt" -lt 5 ]]; then
               echo "Rebasing against latest remote branch..."
@@ -222,7 +293,11 @@ jobs:
 
           echo "::error::Failed to push offsets after 5 attempts."
           exit 1
-          
+
+      # ======================================================
+      # Final status
+      # ======================================================
+
       - name: Final status
         if: success()
         shell: bash
